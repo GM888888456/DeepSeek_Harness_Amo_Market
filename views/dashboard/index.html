@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>我想永远陪着你-市场</title>
+  <title>我想永远陪着你-世态</title>
   <style>
     :root { --bg:#f4f4f6; --card:#f4f4f6; --line:rgba(128,128,128,.22); --pink:#d83b3b;
             --muted:#7a7a83; --text:#2b2b31; }
@@ -38,10 +38,9 @@
 <body>
   <div class="wrap">
     <header>
-      <div class="brand"><span class="dot"></span><span>我想永远陪着你-市场</span></div>
+      <div class="brand"><span class="dot"></span><span>我想永远陪着你-世态</span></div>
       <span class="sub" id="ver">—</span>
     </header>
-    <div class="linkbar" id="linkbar">连接状态：检查中…</div>
     <div class="citybar">
       <span>当前城市 <b id="city">—</b></span>
       <span id="tier">—</span>
@@ -162,26 +161,10 @@
       if (data) el("clock").textContent = data.built_at ? ("盘面 " + data.built_at) : "";
     }
 
-    async function loadLink() {
-      var box = el("linkbar"); if (!box) return;
-      var d = await get("health");
-      if (!d) { box.textContent = "连接状态：读取失败"; return; }
-      function dot(ok) {
-        return '<span style="color:' + (ok ? "#2e9e5b" : "#d83b3b") + '">\u25cf</span>';
-      }
-      var beat = d.last_heartbeat;
-      var beatText = (beat === 0 || beat == null) ? "0 秒前" : (beat < 0 ? "从未" : beat + " 秒前");
-      box.innerHTML = "终端 " + dot(d.terminal_connected)
-        + (d.terminal_connected ? " v" + (d.terminal_version || "?") : " 未连接")
-        + "　记忆库 " + dot(d.data_connected)
-        + (d.data_connected ? " v" + (d.data_version || "?") : " 未连接")
-        + "　bot " + (d.bot_id || "—") + "　心跳 " + beatText;
-    }
 
     async function boot() {
       await loadData();
       await loadHeader();
-      await loadLink();
       render();
     }
 
