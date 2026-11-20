@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>我想永远陪着你-市场</title>
+  <style>
+    :root { --bg:#f4f4f6; --card:#f4f4f6; --line:rgba(128,128,128,.22); --pink:#d83b3b;
+            --muted:#7a7a83; --text:#2b2b31; }
+    body { margin:0; background:var(--bg); font:14px/1.6 system-ui,-apple-system,sans-serif; color:var(--text); }
+    .wrap { max-width:720px; margin:0 auto; padding:14px; }
+    header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+    .brand { display:flex; align-items:center; gap:8px; font-weight:600; }
+    .dot { width:8px; height:8px; border-radius:50%; background:var(--pink); display:inline-block; }
+    .sub { color:var(--muted); font-size:12px; }
+    .linkbar { margin:6px 0 10px; padding:8px 10px; border-radius:10px;
+               background:rgba(128,128,128,.10); font-size:12px; line-height:1.6; }
+    .citybar { display:flex; flex-wrap:wrap; gap:10px; align-items:baseline;
+               font-size:12px; color:var(--muted); margin-bottom:8px; }
+    .citybar b { color:var(--text); font-size:13px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
+            padding:10px 12px; }
+    .panehead { display:flex; justify-content:space-between; align-items:baseline;
+                padding-bottom:6px; border-bottom:1px solid var(--line); }
+    .panehead b { font-size:13px; }
+    ul { list-style:none; margin:0; padding:0; }
+    li { display:flex; justify-content:space-between; gap:10px; padding:6px 0;
+         border-bottom:1px dashed var(--line); }
+    li:last-child { border-bottom:0; }
+    .name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .name i { color:var(--muted); font-style:normal; font-size:12px; margin-left:6px; }
+    .price { flex:0 0 auto; font-variant-numeric:tabular-nums; }
+    .price b { font-weight:600; }
+    .empty { color:var(--muted); padding:14px 0; font-size:13px; }
+    .note { color:var(--muted); font-size:12px; padding-top:8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand"><span class="dot"></span><span>我想永远陪着你-市场</span></div>
+      <span class="sub" id="ver">—</span>
+    </header>
+    <div class="linkbar" id="linkbar">连接状态：检查中…</div>
+    <div class="citybar">
+      <span>当前城市 <b id="city">—</b></span>
+      <span id="tier">—</span>
+      <span id="clock"></span>
+    </div>
+    <div class="card" id="marketCard">
+      <div class="panehead"><b id="pageTitle">菜市场</b><span class="sub" id="pageCount">—</span></div>
+      <ul id="list"></ul>
+      <div class="note" id="note">双击这张卡片：切到下一页（循环）</div>
+    </div>
+  </div>
+  <script>
+  (function () {
+    var bridge = null;
+    function resolve() {
+      if (bridge) return bridge;
+      var c = [];
+      try { c.push(window.AstrBotPluginView, window.AstrBotPluginPage); } catch (e) {}
+      try { c.push(window.parent.AstrBotPluginView, window.parent.AstrBotPluginPage); } catch (e) {}
+      bridge = c.find(function (b) { return b && typeof b.apiGet === "function"; }) || null;
+      return bridge;
+    }
+    function wait(fn, tries) {
+      var n = (tries == null) ? 50 : tries;
+      if (resolve()) { fn(); return; }
+      if (n > 0) setTimeout(function () { wait(fn, n - 1); }, 120);
+    }
+    function unwrap(res) { var v = res; if (v && typeof v === "object" && "data" in v) v = v.data; return v; }
+    async function get(p) { var b = resolve(); try { return b ? unwrap(await b.apiGet(p)) : null; } catch (e) { return null; } }
+    function el(id) { return document.getElementById(id); }
+    function money(n) {
+      var v = Number(n || 0);
+      return (Math.round(v) === v) ? String(Math.round(v)) : v.toFixed(1);
+    }
+
+    // 双击循环的页：跟市场里的 11 类一一对应
+    var PAGES = [
+      { kind: "groceries", title: "菜市场", hint: "按今日菜价 × 城市系数" },
+      { kind: "takeout", title: "外卖", hint: "菜价 + 配送费，夜里加价" },
+      { kind: "dining", title: "堂食", hint: "本地馆子，单人/双人/套餐" },
+      { kind: "drugs", title: "药房", hint: "医保指导价 × 季节系数" },
+      { kind: "outfits", title: "服装", hint: "汉服/JK/日常，大促会打折" },
+      { kind: "jewelry", title: "首饰", hint: "按金价浮动" },
+      { kind: "cosmetics", title: "美妆", hint: "平价/中档/大牌" },
+      { kind: "hotel", title: "酒店", hint: "本地 120 家：品牌 × 房型 × 地段" },
+      { kind: "ticket", title: "车票", hint: "从这里出发 120 段路，里程计价" },
+      { kind: "attraction", title: "景区", hint: "本地和周边 120 个，4A/5A 票价" },
+      { kind: "subscription", title: "会员", hint: "视频/音乐/云盘…按套餐" }
+    ];
+    var index = 0, data = null, cityName = "";
+
+    function rowNode(item) {
+      var li = document.createElement("li");
+      var name = document.createElement("span");
+      name.className = "name";
+      name.textContent = item.name || "?";
+      var extra = item.note || item.shop || item.group || item.level || item.tier_name || "";
+      if (extra) {
+        var i = document.createElement("i");
+        i.textContent = extra;
+        name.appendChild(i);
+      }
+      var price = document.createElement("span");
+      price.className = "price";
+      var b = document.createElement("b");
+      b.textContent = "¥" + money(item.price);
+      price.appendChild(b);
+      if (item.unit) {
+        var u = document.createElement("span");
+        u.className = "sub"; u.textContent = "/" + item.unit;
+        price.appendChild(u);
+      }
+      li.appendChild(name); li.appendChild(price);
+      return li;
+    }
+
+    function render() {
+      var page = PAGES[index];
+      var rows = (data && data.items && data.items[page.kind]) || [];
+      el("pageTitle").textContent = page.title + " · " + (index + 1) + "/" + PAGES.length;
+      el("pageCount").textContent = rows.length + " 项";
+      var list = el("list"); list.textContent = "";
+      if (!rows.length) {
+        var empty = document.createElement("div");
+        empty.className = "empty"; empty.textContent = "这一类今天没有可查的价。";
+        list.appendChild(empty);
+      } else {
+        var frag = document.createDocumentFragment();
+        rows.slice(0, 300).forEach(function (row) { frag.appendChild(rowNode(row)); });
+        list.appendChild(frag);
+      }
+      el("note").textContent = page.hint + " · 双击这张卡片切到下一页（循环）";
+    }
+
+    var lastCycle = 0;
+    function cycle() {
+      // 桌面双击会同时触发 dblclick + 两次 touchend/click：400ms 内只翻一页
+      var now = Date.now();
+      if (now - lastCycle < 400) return;
+      lastCycle = now;
+      index = (index + 1) % PAGES.length;
+      render();
+    }
+
+    async function loadData() {
+      data = await get("data");
+      if (!data || !data.items) { data = await get("nexus"); }
+    }
+
+    async function loadHeader() {
+      var d = await get("status");
+      if (!d) { el("ver").textContent = "读取失败"; return; }
+      el("ver").textContent = "v" + (d.version || "");
+      var c = d.city || {};
+      cityName = c.city || "";
+      el("city").textContent = cityName || "未知";
+      el("tier").textContent = (c.level || "") + (c.factor ? " ×" + c.factor : "");
+      if (data) el("clock").textContent = data.built_at ? ("盘面 " + data.built_at) : "";
+    }
+
+    async function loadLink() {
+      var box = el("linkbar"); if (!box) return;
+      var d = await get("health");
+      if (!d) { box.textContent = "连接状态：读取失败"; return; }
+      function dot(ok) {
+        return '<span style="color:' + (ok ? "#2e9e5b" : "#d83b3b") + '">\u25cf</span>';
+      }
+      var beat = d.last_heartbeat;
+      var beatText = (beat === 0 || beat == null) ? "0 秒前" : (beat < 0 ? "从未" : beat + " 秒前");
+      box.innerHTML = "终端 " + dot(d.terminal_connected)
+        + (d.terminal_connected ? " v" + (d.terminal_version || "?") : " 未连接")
+        + "　记忆库 " + dot(d.data_connected)
+        + (d.data_connected ? " v" + (d.data_version || "?") : " 未连接")
+        + "　bot " + (d.bot_id || "—") + "　心跳 " + beatText;
+    }
+
+    async function boot() {
+      await loadData();
+      await loadHeader();
+      await loadLink();
+      render();
+    }
+
+    var card = el("marketCard");
+    if (card) {
+      var lastTap = 0;
+      card.addEventListener("dblclick", cycle);
+      card.addEventListener("touchend", function () {
+        var now = Date.now();
+        if (now - lastTap < 320) { cycle(); lastTap = 0; } else { lastTap = now; }
+      });
+    }
+    wait(boot);
+  })();
+  </script>
+</body>
+</html>
