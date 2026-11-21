@@ -252,12 +252,114 @@ OTHER_OUTFITS = (
 )
 
 
+# ---------- 整套服装（2026-11-21：市场只卖整套，数量 汉服40 / 百褶40 / 日常30 / 寝衣4） ----------
+#: 款式池：颜色只走清透系（她定的配色），朝代 / 款式组合出 110 套。
+_SET_COLORS = ("白", "粉", "浅蓝", "月白", "杏", "鹅黄", "藕荷", "薄荷")
+_HANFU = (
+    ("唐制", "齐胸裙", "绣花翘头履"),
+    ("宋制", "百迭裙", "素缎绣鞋"),
+    ("明制", "马面裙", "绣花弓鞋"),
+    ("魏晋", "褶裙", "软底布履"),
+    ("汉制", "曲裾裙", "翘头履"),
+)
+_BAIZHE_TOPS = ("水手服", "海军领上衣", "长袖衬衫", "短袖衬衫", "针织水手领")
+_BAIZHE_SKIRTS = ("24褶格裙", "28褶格裙", "箱褶裙", "轮褶裙", "纯色百褶裙")
+_DAILY_TOPS = ("衬衫", "针织衫", "卫衣", "开衫", "T恤", "毛衣")
+_DAILY_BOTTOMS = ("牛仔裤", "直筒裤", "阔腿裤", "半裙", "工装裤")
+
+
+def _build_outfit_sets() -> tuple:
+    """按款式池组合出整套：汉服 40 / 百褶 40 / 日常 30 / 寝衣 4。"""
+    sets = []
+    # 汉服：5 朝代 × 8 色 = 40
+    for dynasty, skirt, shoe in _HANFU:
+        for color in _SET_COLORS:
+            sets.append((
+                "汉服·%s%s抹胸长裙（整套）" % (dynasty, color),
+                "汉服·%s" % dynasty,
+                (("%s%s抹胸" % (dynasty, color), "top"),
+                 ("%s%s%s" % (dynasty, color, skirt), "bottom"),
+                 ("%s薄纱披帛" % color, "accessory"),
+                 ("%s%s" % (dynasty, shoe), "shoes")),
+            ))
+    # 百褶（JK 制服）：8 色 × 5 种上衣 = 40
+    for t_index, top in enumerate(_BAIZHE_TOPS):
+        for c_index, color in enumerate(_SET_COLORS):
+            skirt = _BAIZHE_SKIRTS[(t_index + c_index) % len(_BAIZHE_SKIRTS)]
+            sets.append((
+                "百褶·%s%s（整套）" % (color, top),
+                "百褶·%s" % top,
+                (("%s%s" % (color, top), "jk_shirt"),
+                 ("%s%s" % (_SET_COLORS[(c_index + 3) % len(_SET_COLORS)], skirt), "jk_skirt"),
+                 ("%s短袜" % color, "socks"),
+                 ("乐福鞋", "shoes"),
+                 ("领结", "accessory")),
+            ))
+    # 日常：6 上装 × 5 色 = 30
+    for t_index, top in enumerate(_DAILY_TOPS):
+        for c_index, color in enumerate(_SET_COLORS[:5]):
+            bottom = _DAILY_BOTTOMS[(t_index + c_index) % len(_DAILY_BOTTOMS)]
+            sets.append((
+                "日常·%s%s（整套）" % (color, top),
+                "日常",
+                (("%s%s" % (color, top), "top"),
+                 ("%s%s" % (_SET_COLORS[(c_index + 2) % len(_SET_COLORS)], bottom), "bottom"),
+                 ("帆布鞋", "shoes"),
+                 ("小挎包", "accessory")),
+            ))
+    # 寝衣（薄纱抹胸长裙）：保留 4 套，睡觉/在家穿
+    sets.extend([
+        ("寝衣·月纱（整套）", "寝衣",
+         (("月白缎面抹胸", "top"), ("月白薄纱长裙", "bottom"), ("白纱披帛", "accessory"))),
+        ("寝衣·樱雾（整套）", "寝衣",
+         (("樱粉纱质抹胸", "top"), ("米白薄纱长裙", "bottom"), ("樱粉薄纱披帛", "accessory"))),
+        ("寝衣·藕烟（整套）", "寝衣",
+         (("藕荷缎面抹胸", "top"), ("藕荷薄纱长裙", "bottom"), ("藕荷薄纱披帛", "accessory"))),
+        ("寝衣·雪绡（整套）", "寝衣",
+         (("白色绣兰抹胸", "top"), ("白色薄纱长裙", "bottom"), ("白玉簪", "accessory"))),
+    ])
+    return tuple(sets)
+
+
+OUTFIT_SETS = _build_outfit_sets()
+
+
+#: 整套价：按类别给定区间（她买的是一整套，不再按单品算钱）
+SET_PRICE_RANGE = {
+    "汉服": (399.0, 899.0),
+    "百褶": (259.0, 459.0),
+    "JK": (259.0, 459.0),
+    "日常": (199.0, 499.0),
+    "寝衣": (299.0, 399.0),
+}
+
+
+def _set_price(style: str, index: int) -> float:
+    style = str(style or "")
+    for key, (low, high) in SET_PRICE_RANGE.items():
+        if key in style:
+            steps = 5
+            return round(low + (high - low) * ((index * 3) % steps) / (steps - 1), 1)
+    return 299.0
+
+
 def build_outfits() -> list[dict]:
-    """服装目录：汉服 50 / JK 50 / 其他 50（用户要的比例，共 150 件）。"""
+    """服装目录：**只卖整套**（2026-11-21 她的要求）。
+
+    以前卖单件，她买一件上衣进衣柜就成了孤件，`compose_set` 认不出套名，
+    日程里配装直接乱掉（她的原话「买了就炸了」）。现在一条商品就是一整套，
+    `pieces` 里带齐每个槽位，买回来按「套名｜件名」展开写进衣柜。
+    """
     rows = []
-    for group in (HANFU_OUTFITS, JK_OUTFITS, OTHER_OUTFITS):
-        for name, slot, style in group:
-            rows.append({"name": name, "slot": slot, "style": style, "kind": "服装"})
+    for index, (name, style, pieces) in enumerate(OUTFIT_SETS):
+        rows.append({
+            "name": name,
+            "slot": "set",
+            "style": style,
+            "kind": "服装",
+            "price": _set_price(style, index),
+            "pieces": [[piece, slot] for piece, slot in pieces],
+        })
     return rows
 
 
@@ -389,6 +491,7 @@ def _extend_outfits() -> list[dict]:
     for index, row in enumerate(rows):
         if not row.get("price"):
             row["price"] = _outfit_price(row.get("slot"), index)
+        row.setdefault("kind", "服装")
     return rows
 
 

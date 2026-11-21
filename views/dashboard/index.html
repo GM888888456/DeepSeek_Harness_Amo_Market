@@ -82,7 +82,7 @@
       { kind: "takeout", title: "外卖", hint: "菜价 + 配送费，夜里加价" },
       { kind: "dining", title: "堂食", hint: "本地馆子，单人/双人/套餐" },
       { kind: "drugs", title: "药房", hint: "医保指导价 × 季节系数" },
-      { kind: "outfits", title: "服装", hint: "汉服/JK/日常，大促会打折" },
+      { kind: "outfits", title: "服装", hint: "整套出售：汉服 40 / 百褶 40 / 日常 30 / 寝衣 4，买下就是整套进衣柜" },
       { kind: "jewelry", title: "首饰", hint: "按金价浮动" },
       { kind: "cosmetics", title: "美妆", hint: "平价/中档/大牌" },
       { kind: "hotel", title: "酒店", hint: "本地 120 家：品牌 × 房型 × 地段" },
@@ -103,6 +103,15 @@
         i.textContent = extra;
         name.appendChild(i);
       }
+      var sub = null;
+      if (item.pieces && item.pieces.length) {
+        var parts = item.pieces.map(function (p) {
+          return (p && p[0]) ? p[0] : String(p);
+        }).filter(Boolean);
+        sub = document.createElement("em");
+        sub.className = "sub";
+        sub.textContent = "整套 " + parts.length + " 件：" + parts.join("、");
+      }
       var price = document.createElement("span");
       price.className = "price";
       var b = document.createElement("b");
@@ -114,6 +123,7 @@
         price.appendChild(u);
       }
       li.appendChild(name); li.appendChild(price);
+      if (sub) li.appendChild(sub);
       return li;
     }
 

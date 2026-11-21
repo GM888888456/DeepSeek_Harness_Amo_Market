@@ -13,6 +13,11 @@ import random
 import re
 import time
 
+try:  # 整套服装定义只在 catalog.py 有一份
+    from .catalog import OUTFIT_SETS, _set_price
+except Exception:  # pragma: no cover
+    from catalog import OUTFIT_SETS, _set_price  # type: ignore
+
 MONTH = lambda: time.strftime("%Y-%m")
 
 COLORS = ("白", "粉", "蓝", "黑", "米", "灰", "红", "浅绿", "杏", "紫")
@@ -46,7 +51,7 @@ DAILY_PIECES = (
 JEWELRY_GROUPS = ("项链", "耳饰", "戒指", "手链", "发饰", "手镯")
 JEWELRY_MATERIALS = ("金", "银", "珍珠", "玉", "水晶", "珐琅")
 
-OUTFIT_FILE = "outfits_catalog.json"
+OUTFIT_FILE = "outfits_catalog_sets_v2.json"
 JEWELRY_FILE = "jewelry_catalog.json"
 
 
@@ -89,49 +94,24 @@ def _unique(used: set, name: str, index: int) -> str:
 
 def outfit_catalog(persona_text: str = "", city: str = "", month: str = "",
                    total: int = 150) -> list[dict]:
-    """按人格生成 150 件服装；喜欢 JK/汉服就多给，颜色优先用她喜欢的。"""
+    """整套服装目录（2026-11-21 她的要求：市场只卖整套）。
+
+    以前这里按人格拼出 150 件**单件**，买回去就是个孤件，衣柜配装直接乱掉。
+    现在一条商品就是一整套（汉服 10 / 百褶 8 / 日常 8 / 寝衣 4），
+    `pieces` 带齐每个槽位，终端买完会按「套名｜件名」展开写进衣柜。
+    """
     month = month or MONTH()
-    text = "%s %s" % (str(persona_text or ""), str(city or ""))
-    low = text.lower()
-    likes_jk = any(word in low for word in ("jk", "制服", "学生", "水手", "格裙"))
-    likes_hanfu = any(word in low for word in ("汉服", "古风", "襦裙", "马面", "褙子", "曲裾"))
-    if likes_jk and not likes_hanfu:
-        counts = {"JK": 70, "汉服": 50, "日常": 30}
-    elif likes_hanfu and not likes_jk:
-        counts = {"JK": 50, "汉服": 70, "日常": 30}
-    else:
-        counts = {"JK": 50, "汉服": 50, "日常": 50}
-    palette = _palette(text)
-    rows, used = [], set()
-
-    def add(name: str, slot: str, category: str, base: float) -> None:
-        name = _unique(used, name, len(rows) + 1)
-        rows.append({"name": name, "slot": slot, "style": category, "kind": "服装",
-                     "price": _price(base, month, name)})
-
-    for index in range(counts["汉服"]):
-        dynasty = HANFU_DYNASTIES[index % len(HANFU_DYNASTIES)]
-        piece, slot = HANFU_PIECES[dynasty][index % len(HANFU_PIECES[dynasty])]
-        color = palette[index % len(palette)]
-        base = {"dress": 320, "top": 180, "bottom": 220,
-                "accessory": 60, "shoes": 120}.get(slot, 150)
-        add("汉服·%s%s%s" % (dynasty, color, piece), slot, "汉服", base)
-
-    for index in range(counts["JK"]):
-        piece, slot = JK_PIECES[index % len(JK_PIECES)]
-        color = palette[index % len(palette)]
-        base = {"jk_shirt": 120, "jk_skirt": 110, "socks": 25,
-                "shoes": 140, "accessory": 30}.get(slot, 100)
-        add("JK·%s%s" % (color, piece), slot, "JK", base)
-
-    for index in range(counts["日常"]):
-        piece, slot = DAILY_PIECES[index % len(DAILY_PIECES)]
-        color = palette[index % len(palette)]
-        base = {"top": 90, "bottom": 110, "dress": 160,
-                "socks": 20, "shoes": 120, "accessory": 50}.get(slot, 100)
-        add("%s%s" % (color, piece), slot, "日常", base)
-
-    return rows[:max(1, int(total))]
+    rows = []
+    for index, (name, style, pieces) in enumerate(OUTFIT_SETS):
+        rows.append({
+            "name": name,
+            "slot": "set",
+            "style": style,
+            "kind": "服装",
+            "price": _price(_set_price(style, index), month, name),
+            "pieces": [[piece, slot] for piece, slot in pieces],
+        })
+    return rows
 
 
 def jewelry_catalog(persona_text: str = "", month: str = "", total: int = 126) -> list[dict]:
@@ -199,7 +179,7 @@ def ensure_catalog(data_dir: str, kind: str, persona_text: str = "",
     if kind == "outfits":
         path = _path(data_dir, OUTFIT_FILE)
         rows = _load(path, month)
-        if rows and len(rows) >= 120:
+        if rows and len(rows) >= 40:
             return rows
         rows = outfit_catalog(persona_text, city, month)
         _save(path, month, rows)

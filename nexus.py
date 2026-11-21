@@ -64,7 +64,7 @@ HOTEL_AREAS = {"市中心": 1.12, "火车站": 0.94, "机场路": 1.0,
                "老城区": 0.92, "新区": 1.05, "景区旁": 1.18}
 PAGE_SIZE = 120
 #: 数据结构/生成规则变了就 +1：旧缓存会被丢弃重建。
-DATA_VERSION = 3
+DATA_VERSION = 7
 
 #: 数字订阅：真实月费的量级（按人民币，不含首月优惠）。
 SUBSCRIPTIONS = (
@@ -505,10 +505,15 @@ def build(plugin, city: str = "", province: str = "", now: datetime = None) -> d
                 unit = str(row.get("unit") or "")
                 note = str(row.get("group") or row.get("shop") or row.get("style")
                            or row.get("tier") or "")
-                rows.append(_row(row.get("name"), kind, price, unit or "份", note,
-                                 source="external" if kind in ("groceries", "takeout")
-                                 else "catalog",
-                                 list_price=row.get("list_price")))
+                item = _row(row.get("name"), kind, price, unit or "份", note,
+                            source="external" if kind in ("groceries", "takeout")
+                            else "catalog",
+                            list_price=row.get("list_price"))
+                # 2026-11-21：整套服装要把「含哪几件」一起给面板，点开才看得见单件
+                if row.get("pieces"):
+                    item["pieces"] = row.get("pieces")
+                    item["slot"] = row.get("slot") or "set"
+                rows.append(item)
             add(kind, rows)
             bucket.extend(rows)
         if section["id"] == "transit":
