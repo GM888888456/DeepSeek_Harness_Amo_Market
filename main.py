@@ -342,7 +342,8 @@ class AmoMarketPlugin(Star):
             "name": PLUGIN_NAME, "display_name": DISPLAY_NAME,
             "version": PLUGIN_VERSION, "counts": counts(),
             "kinds": ["drugs", "groceries", "takeout", "outfits", "jewelry",
-                      "dining", "cosmetics", "hotel", "subscriptions"],
+                      "dining", "cosmetics", "hotel", "subscriptions",
+                      "supermarket", "snacks", "electronics"],
             "price": self.price_snapshot(),
             "city": self.city_tag(),
             "sections": [{"id": row["id"], "title": row["title"], "count": row["count"]}
@@ -362,7 +363,8 @@ class AmoMarketPlugin(Star):
             ("升温", 1.05, "天热，瓜果走俏"),
         ))
         sensitive = {"drugs": 0.2, "groceries": 1.0, "takeout": 0.7, "dining": 0.7,
-                     "outfits": 0.3, "jewelry": 0.1, "cosmetics": 0.2}
+                     "outfits": 0.3, "jewelry": 0.1, "cosmetics": 0.2,
+                     "supermarket": 0.15, "snacks": 0.1, "electronics": 0.02}
         factor_rnd = random.Random("amo-market-f:%s" % day)
         state = {"weather": weather, "note": note,
                  "factors": {k: 1.0 + (base - 1.0) * v * (1.0 + factor_rnd.uniform(-0.03, 0.03))

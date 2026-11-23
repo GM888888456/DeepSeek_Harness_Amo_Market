@@ -458,12 +458,14 @@ SECTIONS = (
     {"id": "wardrobe", "title": "服饰与美妆", "kinds": ("outfits", "jewelry", "cosmetics")},
     {"id": "transit", "title": "出行与住宿", "kinds": ("hotel",)},
     {"id": "life", "title": "娱乐与生活", "kinds": ("subscriptions",)},
+    {"id": "supermarket", "title": "商超与日用", "kinds": ("supermarket", "snacks", "electronics")},
 )
 
 KIND_TITLE = {
     "groceries": "菜市场", "takeout": "外卖", "dining": "堂食", "drugs": "药房",
     "outfits": "服装", "jewelry": "首饰", "cosmetics": "美妆", "hotel": "酒店",
     "subscriptions": "会员订阅", "attractions": "景区门票",
+    "supermarket": "商超日用", "snacks": "零食饮料", "electronics": "电子电器",
 }
 
 
