@@ -465,7 +465,7 @@ KIND_TITLE = {
 
 
 def _load_company():
-    """智脑集团的数据层（company.py，纯标准库）。"""
+    """中国计算智脑集团的数据层（company.py，纯标准库）。"""
     try:
         from . import company as _co  # type: ignore
         return _co
@@ -568,7 +568,7 @@ def _item(name, category, price, unit="", note="", extra=None):
 
 
 def build(plugin, city: str = "", province: str = "", now: datetime = None) -> dict:
-    """世态改成「智脑集团经营盘子」：总览 / 组织架构 / 人员去留 / 在招岗位。
+    """世态改成「中国计算智脑集团经营盘子」：总览 / 组织架构 / 人员去留 / 在招岗位。
 
     用户口径（2026-11-25）：原来那些市场品类全部删掉，不再摆菜价药价，
     买东西走「网络报价 → 扣款」（net_price.py），这里只反映自家公司。
@@ -602,7 +602,7 @@ def build(plugin, city: str = "", province: str = "", now: datetime = None) -> d
         _item("编制 / 在岗", "总览", rep["headcount"], "人",
               "在岗 %d 人，缺编 %d 人" % (rep["onboard"], rep["vacancy"])),
     ]
-    sections.append({"id": "group", "title": "智脑集团 · 经营总览",
+    sections.append({"id": "group", "title": "中国计算智脑集团 · 经营总览",
                      "count": len(overview), "items": overview})
 
     depts = []
@@ -741,7 +741,7 @@ def build(plugin, city: str = "", province: str = "", now: datetime = None) -> d
         "sections": sections,
         "items": items,
         "counts": {key: len(value) for key, value in items.items()},
-        "note": "这是智脑集团的经营盘子，不是商品目录；她买东西走网络实时报价再扣款。",
+        "note": "这是中国计算智脑集团的经营盘子，不是商品目录；她买东西走网络实时报价再扣款。",
     }
 
 
