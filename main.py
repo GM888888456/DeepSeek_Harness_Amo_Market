@@ -32,14 +32,12 @@ except Exception:  # pragma: no cover - 单测/CI 里没有 astrbot
     web_request = None
 
 try:
-    from .catalog import CATALOGS, counts, pick
+    from .np_compat import CATALOGS, counts, pick, persona_catalog
     from .pricing import PriceBook
-    from . import persona_catalog
     from . import nexus
 except ImportError:  # 单测/CI 按文件加载
-    from mk_catalog import CATALOGS, counts, pick  # type: ignore
+    from np_compat import CATALOGS, counts, pick, persona_catalog  # type: ignore
     from mk_pricing import PriceBook  # type: ignore
-    import mk_persona_catalog  # type: ignore
     import mk_nexus  # type: ignore
 
 try:
@@ -143,15 +141,12 @@ class AmoMarketPlugin(Star):
         except Exception:
             return ""
 
-    def items(self, kind: str) -> list[dict]:
-        kind = str(kind or "")
-        city, province = self._city()
-        persona = self._persona_text()
-        if kind in ("outfits", "jewelry") and persona:
-            rows = persona_catalog.ensure_catalog(self.data_dir, kind, persona, city)
-        else:
-            rows = [dict(row) for row in (CATALOGS.get(kind) or [])]
-        return self.price_book.adjust_rows(kind, rows, city, province)
+    def items(self, kind: str) -> list:
+        """商品目录已退役：她买东西靠 SPEND 报价 + charge 扣款。"""
+        return []
+
+    def net_rows(self, kind: str, place: str = "") -> list:
+        return []
 
     def price_snapshot(self) -> dict:
         city, province = self._city()
@@ -278,6 +273,7 @@ class AmoMarketPlugin(Star):
             ("/catalog", self.api_catalog, ["GET", "POST"]),
             ("/nexus", self.api_nexus, ["GET", "POST"]),
             ("/data", self.api_market_data, ["GET"]),
+            ("/company", self.api_company, ["GET", "POST"]),
             ("/query", self.api_query, ["POST"]),
             ("/hotel", self.api_hotel, ["POST"]),
             ("/ticket", self.api_ticket, ["POST"]),
@@ -420,6 +416,201 @@ class AmoMarketPlugin(Star):
         self._sync_config()
         data = self.market_data()
         return self._json({"code": 0, "data": data})
+
+    def _ops(self):
+        try:
+            from . import ops as _o  # type: ignore
+            return _o
+        except Exception:
+            pass
+        try:
+            import ops as _o  # type: ignore
+            return _o
+        except Exception:
+            pass
+        try:
+            import importlib.util as _ilu
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ops.py")
+            spec = _ilu.spec_from_file_location("amo_ops_main", path)
+            mod = _ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            return mod
+        except Exception:
+            return None
+
+    def _quant(self):
+        try:
+            from . import quant as _q  # type: ignore
+            return _q
+        except Exception:
+            pass
+        try:
+            import quant as _q  # type: ignore
+            return _q
+        except Exception:
+            pass
+        try:
+            import importlib.util as _ilu
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "quant.py")
+            spec = _ilu.spec_from_file_location("amo_quant_main", path)
+            mod = _ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            return mod
+        except Exception:
+            return None
+
+    def office(self, action: str = "brief", target: str = "", note: str = "") -> dict:
+        """经营台的动作总入口（面板和聊天工具都走这里）。"""
+        cl = self._company_live()
+        ops = self._ops()
+        quant = self._quant()
+        action = str(action or "brief").strip().lower()
+        target = str(target or "").strip()
+        data_dir = self.data_dir
+
+        if action in ("brief", "today"):
+            if ops is None:
+                return {"ok": False, "msg": "日常层没加载上"}
+            b = ops.brief(data_dir)
+            return {"ok": True, "brief": b, "line": b["line"]}
+
+        if action in ("approve", "reject"):
+            if ops is None:
+                return {"ok": False, "msg": "日常层没加载上"}
+            res = ops.decide(data_dir, target, "approve" if action == "approve" else "reject", note)
+            if res.get("ok") and res.get("cash_delta") and cl is not None:
+                cl.adjust_cash(data_dir, res["cash_delta"],
+                               "批「%s」占款 %.0f 万" % (res["doc"]["title"], abs(res["cash_delta"])))
+            return res
+
+        if action in ("policy", "bonus", "cut"):
+            if ops is None:
+                return {"ok": False, "msg": "日常层没加载上"}
+            key = "bonus" if action == "bonus" else ("cut" if action == "cut" else target)
+            res = ops.set_policy(data_dir, key or target)
+            if res.get("ok") and cl is not None:
+                pick = (res.get("policy") or {}).get("id")
+                delta = -1200.0 if pick == "bonus" else 460.0
+                cl.adjust_cash(data_dir, delta, "人事政策：" + ("发奖金" if pick == "bonus" else "降本增效"))
+            return res
+
+        if action in ("direction", "strategy", "set_strategy"):
+            if ops is None:
+                return {"ok": False, "msg": "日常层没加载上"}
+            return ops.set_strategy(data_dir, target or note)
+
+        if action == "fire_d":
+            if ops is None or cl is None:
+                return {"ok": False, "msg": "日常层没加载上"}
+            res = ops.fire_perf_d(data_dir, target)
+            if not res.get("ok"):
+                return res
+            for person in res.get("fired") or []:
+                cl.fire_forced(data_dir, person["dept"], person["name"],
+                               person.get("post", ""), person.get("severance", 0),
+                               person.get("why", ""))
+            return res
+
+        if action in ("fill_gap", "fill"):
+            if ops is None or cl is None:
+                return {"ok": False, "msg": "日常层没加载上"}
+            gaps = ops.gaps(data_dir)
+            if not gaps:
+                return {"ok": False, "msg": "没有待补的缺口"}
+            pick = None
+            for g in gaps:
+                if not target or target in g.get("post", "") or target in g.get("dept", ""):
+                    pick = g
+                    break
+            pick = pick or gaps[0]
+            try:
+                salary = float(str(pick.get("salary") or "1.5").split("~")[0])
+            except Exception:
+                salary = 1.5
+            hired = cl.hire_custom(data_dir, pick["dept"], pick["post"],
+                                   round(salary * 1.6, 2), pick.get("why", ""))
+            if hired.get("ok"):
+                ops.close_gap(data_dir, pick["dept"], pick["post"],
+                              (hired.get("hired") or {}).get("name", ""))
+            return {"ok": bool(hired.get("ok")), "hired": hired.get("hired"),
+                    "msg": ("补上了：%s 接手 %s 的活" % ((hired.get("hired") or {}).get("name", ""), pick["post"]))
+                    if hired.get("ok") else "补招没成"}
+
+        if action == "quant":
+            if quant is None:
+                return {"ok": False, "msg": "幻方模块没加载上"}
+            return {"ok": True, "summary": quant.summary(), "pnl": quant.pnl(),
+                    "strategies": quant.STRATEGIES, "path": quant.PATH,
+                    "risk": quant.RISK_LINES}
+
+        if action == "fire":
+            return cl.fire(data_dir, target, note) if cl is not None else {"ok": False, "msg": "状态层没加载上"}
+        if action == "hire":
+            return cl.hire(data_dir, target, note) if cl is not None else {"ok": False, "msg": "状态层没加载上"}
+        if action == "reset":
+            return cl.reset(data_dir) if cl is not None else {"ok": False, "msg": "状态层没加载上"}
+        if action == "timeline":
+            return {"ok": True, "log": cl.timeline(data_dir) if cl is not None else []}
+        if action == "report":
+            return {"ok": True, "report": cl.report(data_dir) if cl is not None else {}}
+        return {"ok": False, "msg": "不认识的动作：%s" % action}
+
+    def _company_live(self):
+        """集团实时状态层（company_live.py）。"""
+        try:
+            from . import company_live as _cl  # type: ignore
+            return _cl
+        except Exception:
+            pass
+        try:
+            import company_live as _cl  # type: ignore
+            return _cl
+        except Exception:
+            pass
+        try:
+            import importlib.util as _ilu
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "company_live.py")
+            spec = _ilu.spec_from_file_location("amo_company_live", path)
+            mod = _ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            return mod
+        except Exception as exc:
+            logger.debug("[amo_market] 集团状态层加载失败: %s" % exc)
+            return None
+
+    async def api_company(self):
+        """经营台的动作接口：全部转给 office()。
+
+        参数走 querystring 或 JSON body：action / target / note。
+        """
+        params = {}
+        try:
+            if web_request is not None and hasattr(web_request, "query"):
+                params.update(dict(web_request.query))
+        except Exception:
+            pass
+        try:
+            body = await self._payload()
+            if isinstance(body, dict):
+                params.update(body)
+        except Exception:
+            pass
+        action = str(params.get("action") or "report").strip().lower()
+        try:
+            res = self.office(action, str(params.get("target") or params.get("dept") or params.get("name") or ""),
+                              str(params.get("note") or params.get("post") or ""))
+        except Exception as exc:
+            logger.warning("[amo_market] 经营动作失败: %s" % exc)
+            return self._json({"code": 1, "msg": str(exc)})
+        if action in ("approve", "reject", "direction", "strategy", "fire_d", "fill_gap", "fill",
+                      "fire", "hire", "reset"):
+            self._nexus = {}
+            self._nexus_day = ""
+        # 动作回包：前端拿 data 就行
+        payload = dict(res) if isinstance(res, dict) else {"ok": False}
+        payload.setdefault("action", action)
+        return self._json({"code": 0, "data": payload, "ok": payload.get("ok", True),
+                           "msg": payload.get("msg", "")})
 
     async def api_market_data(self):
         self._sync_config()

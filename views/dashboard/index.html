@@ -3,192 +3,433 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>我想永远陪着你-世态</title>
+  <meta name="theme-color" content="#f4f4f6" />
+  <title>智脑集团 · 经营台</title>
+  <!-- 只有终端那一份样式 -->
+  <link rel="stylesheet" href="./terminal-base.css?v=4" />
+
   <style>
-    :root { --bg:#f4f4f6; --card:#f4f4f6; --line:rgba(128,128,128,.22); --pink:#d83b3b;
-            --muted:#7a7a83; --text:#2b2b31; }
-    body { margin:0; background:var(--bg); font:14px/1.6 system-ui,-apple-system,sans-serif; color:var(--text); }
-    .wrap { max-width:720px; margin:0 auto; padding:14px; }
-    header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
-    .brand { display:flex; align-items:center; gap:8px; font-weight:600; }
-    .dot { width:8px; height:8px; border-radius:50%; background:var(--pink); display:inline-block; }
-    .sub { color:var(--muted); font-size:12px; }
-    .linkbar { margin:6px 0 10px; padding:8px 10px; border-radius:10px;
-               background:rgba(128,128,128,.10); font-size:12px; line-height:1.6; }
-    .citybar { display:flex; flex-wrap:wrap; gap:10px; align-items:baseline;
-               font-size:12px; color:var(--muted); margin-bottom:8px; }
-    .citybar b { color:var(--text); font-size:13px; }
-    .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
-            padding:10px 12px; }
-    .panehead { display:flex; justify-content:space-between; align-items:baseline;
-                padding-bottom:6px; border-bottom:1px solid var(--line); }
-    .panehead b { font-size:13px; }
-    ul { list-style:none; margin:0; padding:0; }
-    li { display:flex; justify-content:space-between; gap:10px; padding:6px 0;
-         border-bottom:1px dashed var(--line); }
-    li:last-child { border-bottom:0; }
-    .name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .name i { color:var(--muted); font-style:normal; font-size:12px; margin-left:6px; }
-    .price { flex:0 0 auto; font-variant-numeric:tabular-nums; }
-    .price b { font-weight:600; }
-    .empty { color:var(--muted); padding:14px 0; font-size:13px; }
-    .note { color:var(--muted); font-size:12px; padding-top:8px; }
+    /* 终端没有的三种组件，按终端卡内行的尺度补：列表行、可选行、进度条已内置 */
+    .list { list-style: none; margin: 0; padding: 0; }
+    .list li { display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+               padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+    .list li:last-child { border-bottom: 0; }
+    .list .p { font-variant-numeric: tabular-nums; }
+    .list .s { color: var(--muted); font-size: 12px; }
+    .list .ok { color: var(--ok); }
+    .list .bad { color: var(--pink2); }
+    .list .empty { color: var(--muted); text-align: center; padding: 16px 0; }
+    .pick { display: flex; width: 100%; text-align: left; gap: 10px; align-items: baseline;
+            justify-content: space-between; padding: 10px 0; border: 0;
+            border-bottom: 1px solid var(--line); background: transparent; color: var(--text);
+            font: inherit; font-size: 13px; cursor: pointer; border-radius: 0; }
+    .pick:last-child { border-bottom: 0; }
+    .pick:hover { color: var(--pink); }
+    .pick b { font-weight: 600; }
+    .pick .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pick .v { color: var(--muted); font-size: 12px; white-space: nowrap; flex: 0 0 auto; }
+    .pick .g { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 7px;
+               background: var(--hover); color: var(--muted); font-size: 11px; flex: 0 0 auto; }
   </style>
+  <link rel="stylesheet" href="./tweak.css?v=4" />
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <div class="brand"><span class="dot"></span><span>我想永远陪着你-世态</span></div>
-      <span class="sub" id="ver">—</span>
-    </header>
-    <div class="citybar">
-      <span>当前城市 <b id="city">—</b></span>
-      <span id="tier">—</span>
-      <span id="clock"></span>
-    </div>
-    <div class="card" id="marketCard">
-      <div class="panehead"><b id="pageTitle">菜市场</b><span class="sub" id="pageCount">—</span></div>
-      <ul id="list"></ul>
-      <div class="note" id="note">双击这张卡片：切到下一页（循环）</div>
-    </div>
-  </div>
-  <script>
-  (function () {
-    var bridge = null;
-    function resolve() {
-      if (bridge) return bridge;
-      var c = [];
-      try { c.push(window.AstrBotPluginView, window.AstrBotPluginPage); } catch (e) {}
-      try { c.push(window.parent.AstrBotPluginView, window.parent.AstrBotPluginPage); } catch (e) {}
-      bridge = c.find(function (b) { return b && typeof b.apiGet === "function"; }) || null;
-      return bridge;
-    }
-    function wait(fn, tries) {
-      var n = (tries == null) ? 50 : tries;
-      if (resolve()) { fn(); return; }
-      if (n > 0) setTimeout(function () { wait(fn, n - 1); }, 120);
-    }
-    function unwrap(res) { var v = res; if (v && typeof v === "object" && "data" in v) v = v.data; return v; }
-    async function get(p) { var b = resolve(); try { return b ? unwrap(await b.apiGet(p)) : null; } catch (e) { return null; } }
-    function el(id) { return document.getElementById(id); }
-    function money(n) {
-      var v = Number(n || 0);
-      return (Math.round(v) === v) ? String(Math.round(v)) : v.toFixed(1);
-    }
+<div class="wrap">
+  <header>
+    <div class="brand"><span class="dot"></span> 智脑集团</div>
+    <div class="clock" id="clock">--</div>
+  </header>
 
-    // 双击循环的页：跟市场里的 11 类一一对应
-    var PAGES = [
-      { kind: "groceries", title: "菜市场", hint: "按今日菜价 × 城市系数" },
-      { kind: "takeout", title: "外卖", hint: "菜价 + 配送费，夜里加价" },
-      { kind: "dining", title: "堂食", hint: "本地馆子，单人/双人/套餐" },
-      { kind: "drugs", title: "药房", hint: "医保指导价 × 季节系数" },
-      { kind: "outfits", title: "服装", hint: "整套出售：汉服 40 / 百褶 40 / 日常 30 / 寝衣 4，买下就是整套进衣柜" },
-      { kind: "jewelry", title: "首饰", hint: "按金价浮动" },
-      { kind: "cosmetics", title: "美妆", hint: "平价/中档/大牌" },
-      { kind: "hotel", title: "酒店", hint: "本地 120 家：品牌 × 房型 × 地段" },
-      { kind: "ticket", title: "车票", hint: "从这里出发 120 段路，里程计价" },
-      { kind: "attraction", title: "景区", hint: "本地和周边 120 个，4A/5A 票价" },
-      { kind: "subscription", title: "会员", hint: "视频/音乐/云盘…按套餐" }
-    ];
-    var index = 0, data = null, cityName = "";
+  <nav class="tabs" id="flow"></nav>
 
-    function rowNode(item) {
-      var li = document.createElement("li");
-      var name = document.createElement("span");
-      name.className = "name";
-      name.textContent = item.name || "?";
-      var extra = item.note || item.shop || item.group || item.level || item.tier_name || "";
-      if (extra) {
-        var i = document.createElement("i");
-        i.textContent = extra;
-        name.appendChild(i);
-      }
-      var sub = null;
-      if (item.pieces && item.pieces.length) {
-        var parts = item.pieces.map(function (p) {
-          return (p && p[0]) ? p[0] : String(p);
-        }).filter(Boolean);
-        sub = document.createElement("em");
-        sub.className = "sub";
-        sub.textContent = "整套 " + parts.length + " 件：" + parts.join("、");
-      }
-      var price = document.createElement("span");
-      price.className = "price";
-      var b = document.createElement("b");
-      b.textContent = "¥" + money(item.price);
-      price.appendChild(b);
-      if (item.unit) {
-        var u = document.createElement("span");
-        u.className = "sub"; u.textContent = "/" + item.unit;
-        price.appendChild(u);
-      }
-      li.appendChild(name); li.appendChild(price);
-      if (sub) li.appendChild(sub);
-      return li;
+  <div class="sub" id="tip" style="color:var(--pink2)"></div>
+
+  <div id="stage"></div>
+</div>
+
+<script>
+(function () {
+  var bridge = null, DATA = null, REP = null, LOG = [];
+  var nav = [{ s: "home", c: {}, t: "大堂" }], cur = 0;
+
+  function resolve() {
+    if (bridge) return bridge;
+    var c = [];
+    try { c.push(window.AstrBotPluginView, window.AstrBotPluginPage); } catch (e) {}
+    try { c.push(window.parent.AstrBotPluginView, window.parent.AstrBotPluginPage); } catch (e) {}
+    bridge = c.find(function (b) { return b && typeof b.apiGet === "function"; }) || null;
+    return bridge;
+  }
+  function wait(fn, n) {
+    n = (n == null) ? 60 : n;
+    if (resolve()) { fn(); return; }
+    if (n > 0) setTimeout(function () { wait(fn, n - 1); }, 120);
+  }
+  function unwrap(r) { var v = r; if (v && typeof v === "object" && "data" in v) v = v.data; return v; }
+  async function get(p) { var b = resolve(); try { return b ? unwrap(await b.apiGet(p)) : null; } catch (e) { return null; } }
+  async function act(params) {
+    var b = resolve();
+    var qs = Object.keys(params).map(function (k) { return k + "=" + encodeURIComponent(params[k]); }).join("&");
+    if (b && typeof b.apiPost === "function") {
+      try {
+        var r = unwrap(await b.apiPost("company", params)) || {};
+        if (r && (r.ok !== undefined || r.msg)) return r;
+        if (r && r.data) return r.data;
+      } catch (e) {}
     }
+    return await get("company?" + qs);
+  }
+  function el(id) { return document.getElementById(id); }
+  function money(n) {
+    var v = Number(n || 0);
+    if (!isFinite(v)) return "—";
+    if (Math.abs(v) >= 10000) return (v / 10000).toFixed(2) + "亿";
+    return (Math.round(v * 10) / 10) + "万";
+  }
+  function n1(v) { return Number(v || 0).toFixed(1); }
+  function clear(x) { while (x.firstChild) x.removeChild(x.firstChild); }
+  function h(tag, cls, txt) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (txt != null) n.textContent = txt;
+    return n;
+  }
+  function tip(msg, bad) {
+    var n = el("tip");
+    n.textContent = msg || "";
+    n.style.color = bad ? "var(--pink2)" : "var(--muted)";
+  }
+  function S() { var m = {}; ((DATA && DATA.sections) || []).forEach(function (x) { m[x.id] = x; }); return m; }
+  function I(id) { var s = S()[id]; return (s && s.items) || []; }
 
-    function render() {
-      var page = PAGES[index];
-      var rows = (data && data.items && data.items[page.kind]) || [];
-      el("pageTitle").textContent = page.title + " · " + (index + 1) + "/" + PAGES.length;
-      el("pageCount").textContent = rows.length + " 项";
-      var list = el("list"); list.textContent = "";
-      if (!rows.length) {
-        var empty = document.createElement("div");
-        empty.className = "empty"; empty.textContent = "这一类今天没有可查的价。";
-        list.appendChild(empty);
-      } else {
-        var frag = document.createDocumentFragment();
-        rows.slice(0, 300).forEach(function (row) { frag.appendChild(rowNode(row)); });
-        list.appendChild(frag);
-      }
-      el("note").textContent = page.hint + " · 双击这张卡片切到下一页（循环）";
+  function paintHead() {
+    var f = el("flow"); clear(f);
+    nav.slice(0, cur + 1).forEach(function (n, i) {
+      var b = h("button", "tab" + (i === cur ? " on" : ""), n.t || "—");
+      b.type = "button";
+      b.addEventListener("click", function () { if (i < cur) { cur = i; render(); } });
+      f.appendChild(b);
+    });
+  }
+
+  function push(s, c, t) { nav = nav.slice(0, cur + 1); nav.push({ s: s, c: c || {}, t: t || "" }); cur = nav.length - 1; }
+  function back() { if (cur > 0) { cur -= 1; render(); } }
+  function home() { cur = 0; nav = nav.slice(0, 1); render(); }
+
+  function card(title, right) {
+    var sec = h("section", "card");
+    var row = h("div", "row between");
+    row.appendChild(h("div", "label", title));
+    if (right) row.appendChild(h("div", "sub", right));
+    sec.appendChild(row);
+    return sec;
+  }
+  function kv(sec, label, value) {
+    var r = h("div", "row between");
+    r.appendChild(h("div", "sub", label));
+    r.appendChild(h("div", "value", value));
+    sec.appendChild(r);
+    return r;
+  }
+  function pick(title, sub, o) {
+    o = o || {};
+    var b = h("button", "pick");
+    b.type = "button";
+    b.title = title || "";
+    if (o.icon) b.appendChild(h("span", "g", o.icon));
+    if (o.showTitle !== false && !o.icon) {
+      b.appendChild(h("span", "t", title || ""));
     }
+    b.appendChild(h("span", "v", sub || ""));
+    b.addEventListener("click", o.onClick || function () {});
+    return b;
+  }
+  function stat(sec, label, value, sub) {
+    var grid = sec.querySelector(".status-grid");
+    if (!grid) { grid = h("div", "status-grid"); sec.appendChild(grid); }
+    var it = h("div", "status-item");
+    it.appendChild(h("div", "label", label));
+    it.appendChild(h("div", "value", value));
+    if (sub) it.appendChild(h("div", "sub", sub));
+    grid.appendChild(it);
+    return it;
+  }
+  function foot(sec, note, actions) {
+    var r = h("div", "row between");
+    r.style.marginTop = "12px";
+    r.appendChild(h("div", "sub", note || ""));
+    var box = h("div");
+    (actions || []).forEach(function (a) {
+      var b = h("button", "tab", a.text);
+      b.type = "button";
+      b.addEventListener("click", a.onClick || function () {});
+      box.appendChild(b);
+    });
+    r.appendChild(box);
+    sec.appendChild(r);
+  }
+  function done(r) {
+    var ok = r && (r.ok || (r.data && r.data.ok));
+    tip((r && (r.msg || (r.data && r.data.msg))) || (ok ? "办好了" : "没办成"), !ok);
+  }
 
-    var lastCycle = 0;
-    function cycle() {
-      // 桌面双击会同时触发 dblclick + 两次 touchend/click：400ms 内只翻一页
-      var now = Date.now();
-      if (now - lastCycle < 400) return;
-      lastCycle = now;
-      index = (index + 1) % PAGES.length;
-      render();
+  var V = {};
+
+  V.home = function (wrap) {
+    var r = REP || {}, docs = I("docs"), st = I("strategy").filter(function (x) { return x.current; })[0];
+    var q = I("quant");
+    var c = card("经营总览", r.built_at || "");
+    c.querySelector(".row").parentNode.insertBefore(h("div", "sub",
+      (docs.length ? "今天有 " + docs.length + " 份文件等你批红" : "今天没有待批的文件") +
+      "；" + (st ? "会上定的是「" + st.name + "」" : "还没开会定方向") + "。"), c.querySelector(".row").nextSibling);
+    stat(c, "月度营收", money(r.revenue_total), "净利 " + money(r.net_profit));
+    stat(c, "账面现金", money(r.cash), "在岗 " + (r.onboard != null ? r.onboard : "—") + " 人 · 编制 " + (r.headcount != null ? r.headcount : "—"));
+    stat(c, "幻方规模", q.length ? (Math.round(q[0].price) + " 亿") : "—",
+         q.length > 1 ? ("今日 " + Math.round(q[1].price) + " 万") : "");
+    wrap.appendChild(c);
+
+    var c2 = card("今天");
+    c2.appendChild(pick("批红", docs.length ? docs.length + " 份" : "清爽", {
+      icon: "朱", onClick: function () { push("docs", {}, "批红"); render(); } }));
+    c2.appendChild(pick("开会", st ? st.name : "还没定", {
+      icon: "会", onClick: function () { push("strategy", {}, "开会"); render(); } }));
+    wrap.appendChild(c2);
+
+    var c3 = card("公司与钱");
+    c3.appendChild(pick("进楼", "十四个部门", { icon: "楼", onClick: function () { push("depts", {}, "进楼"); render(); } }));
+    c3.appendChild(pick("名册", (I("staff").length || 0) + " 人可动", { icon: "册", onClick: function () { push("staff", {}, "名册"); render(); } }));
+    c3.appendChild(pick("招聘", (I("recruit").length || 0) + " 个岗", { icon: "招", onClick: function () { push("recruit", {}, "招聘"); render(); } }));
+    c3.appendChild(pick("幻方", "规模与策略", { icon: "量", onClick: function () { push("quant", {}, "幻方"); render(); } }));
+    c3.appendChild(pick("报表", "营收与成本", { icon: "账", onClick: function () { push("report", {}, "报表"); render(); } }));
+    c3.appendChild(pick("奖降", "发奖金 / 降本增效", { icon: "赏", onClick: function () { push("policy", {}, "奖降"); render(); } }));
+    wrap.appendChild(c3);
+
+    var c4 = card("留痕");
+    c4.appendChild(pick("记录", LOG.length ? "有 " + LOG.length + " 条" : "还没有", {
+      icon: "记", onClick: function () { push("timeline", {}, "记录"); render(); } }));
+    wrap.appendChild(c4);
+    foot(c4, "", []);
+  };
+
+  V.docs = function (wrap) {
+    var docs = I("docs");
+    var c = card("批红", docs.length + " 份");
+    if (!docs.length) c.appendChild(h("div", "sub", "今天没有待批的文件。"));
+    docs.forEach(function (d) {
+      var parts = String(d.note || "").split("｜");
+      c.appendChild(pick(d.name, parts[0] || "", {
+        onClick: function () { push("doc", { d: d }, "批红"); render(); } }));
+    });
+    foot(c, "合计 " + money(docs.reduce(function (a, b) { return a + Number(b.price || 0); }, 0)), [{ text: "返回", onClick: back }]);
+    wrap.appendChild(c);
+  };
+
+  V.doc = function (wrap, ctx) {
+    var d = ctx.d || {}, parts = String(d.note || "").split("｜");
+    var c = card(d.name, parts[0] || "");
+    c.appendChild(h("div", "sub", "建议：" + (parts[1] || "—") + (d.risk ? "　风险：" + d.risk : "")));
+    c.appendChild(pick("签了", d.unit === "万" ? ("占款 " + money(d.price)) : "不占钱", {
+      onClick: async function () { done(await act({ action: "approve", target: d.doc_id })); await reload(); back(); } }));
+    c.appendChild(pick("驳回", "留一句理由", {
+      onClick: async function () {
+        var why = prompt("驳的理由（可留空）：", "") || "";
+        done(await act({ action: "reject", target: d.doc_id, note: why })); await reload(); back();
+      } }));
+    foot(c, "编号 " + (d.doc_id || "—"), [{ text: "返回", onClick: back }]);
+    wrap.appendChild(c);
+  };
+
+  V.strategy = function (wrap) {
+    var cu = I("strategy").filter(function (x) { return x.current; })[0];
+    var c = card("开会", cu ? cu.name : "还没定");
+    c.appendChild(h("div", "sub", cu ? (cu.note || "").split("｜")[0] : "定下来，文件和招聘会跟着走。"));
+    I("strategy").forEach(function (s) {
+      var parts = String(s.note || "").split("｜");
+      c.appendChild(pick(s.name, s.current ? "当前" : (parts[0] || ""), {
+        onClick: async function () { done(await act({ action: "direction", target: s.name })); await reload(); render(); } }));
+    });
+    foot(c, "", [{ text: "返回", onClick: back }]);
+    wrap.appendChild(c);
+  };
+
+  V.quant = function (wrap) {
+    var q = I("quant"), tot = q.slice(0, 4), rows = q.slice(4);
+    var c = card("幻方量化", "老本行");
+    tot.forEach(function (x) {
+      stat(c, x.name, x.unit === "%" ? (n1(x.price) + "%") : money(x.price),
+           String(x.note || "").split("·")[0]);
+    });
+    var g = h("div", "row between");
+    g.style.marginTop = "14px";
+    g.appendChild(h("div", "label", "策略线"));
+    g.appendChild(h("div", "sub", rows.length + " 条"));
+    c.appendChild(g);
+    rows.forEach(function (s) {
+      var parts = String(s.note || "").split("｜");
+      var r = h("div", "row between");
+      var l = h("div");
+      l.appendChild(h("div", "sub", s.name));
+      l.appendChild(h("div", "value", n1(s.price) + "%"));
+      r.appendChild(l);
+      r.appendChild(h("div", "sub", parts[0] || ""));
+      c.appendChild(r);
+    });
+    foot(c, "净值已扣费，日结。", [{ text: "返回", onClick: back }]);
+    wrap.appendChild(c);
+  };
+
+  V.depts = function (wrap) {
+    var c = card("进楼", I("departments").length + " 个部门");
+    I("departments").forEach(function (it) {
+      c.appendChild(pick(it.name, (it.head || "") + " · " + money(it.price), {
+        onClick: function () { push("dept", { id: it.dept_id, name: it.name, it: it }, it.name); render(); } }));
+    });
+    foot(c, "", [{ text: "返回", onClick: back }]);
+    wrap.appendChild(c);
+  };
+
+  V.dept = function (wrap, ctx) {
+    var it = ctx.it || {};
+    var c = card(ctx.name || it.name, it.head || "");
+    if (it.budget) kv(c, "月度预算", money(it.budget));
+    if (it.gross) kv(c, "毛利率", Math.round(Number(it.gross) * 100) + "%");
+    if (it.note) c.appendChild(h("div", "sub", it.note));
+    var teams = it.teams || [];
+    if (teams.length) c.appendChild(h("div", "sub", "下设：" + teams.join("、")));
+    var ppl = I("staff").filter(function (s) { return s.dept_id === ctx.id; });
+    var jobs = I("recruit").filter(function (j) { return j.dept_id === ctx.id; });
+    c.appendChild(pick("名册", ppl.length + " 人可动", {
+      onClick: function () { push("staff", { id: ctx.id, name: ctx.name }, "名册"); render(); } }));
+    if (jobs.length) c.appendChild(pick("招聘", jobs.length + " 个岗", {
+      onClick: function () { push("recruit", { id: ctx.id, name: ctx.name }, "招聘"); render(); } }));
+    foot(c, "", [{ text: "返回", onClick: back }]);
+    wrap.appendChild(c);
+  };
+
+  V.staff = function (wrap, ctx) {
+    var all = I("staff");
+    var meta = all.filter(function (s) { return s.category === "名册"; })[0];
+    var total = meta ? Math.round(Number(meta.price || 0)) : 0;
+    var list = all.filter(function (s) { return s.category === "人员" || s.fireable; });
+    if (ctx && ctx.id) list = list.filter(function (s) { return s.dept_id === ctx.id; });
+    var head = ctx && ctx.name ? ctx.name + " · 名册" : "名册";
+    var right = total ? ("在册 " + total + " 人 · 抽样 " + list.length) : (list.length + " 人");
+    var c = card(head, right);
+    list.forEach(function (s) {
+      var tail = s.fireable ? ("赔 " + money(s.price))
+        : ((s.level || "") + "·" + (s.perf ? "绩效 " + s.perf : "")).replace(/^\·|\·$/, "");
+      c.appendChild(pick(s.name + (s.post ? "·" + s.post : ""), tail, {
+        onClick: function () { push("person", { id: s.dept_id, name: s.name, s: s }, s.name); render(); } }));
+    });
+    foot(c, "人的去留归人力部，这份只作参考。", [{ text: "返回", onClick: back }]);
+    wrap.appendChild(c);
+  };
+
+  V.person = function (wrap, ctx) {
+    var s = ctx.s || {};
+    var c = card(s.name, (s.dept || ""));
+    c.appendChild(h("div", "sub", (s.note || "") + "　N+1 赔偿 " + money(s.price) + "。"));
+    c.appendChild(h("div", "sub", "人的去留由人力部按绩效办，这里只看不动。"));
+    foot(c, "", [{ text: "返回", onClick: back }]);
+    wrap.appendChild(c);
+  };
+
+  V.recruit = function (wrap, ctx) {
+    var list = I("recruit");
+    if (ctx && ctx.id) list = list.filter(function (j) { return j.dept_id === ctx.id; });
+    var c = card(ctx && ctx.name ? ctx.name + " · 招聘" : "招聘", list.length + " 个岗");
+    list.forEach(function (j) {
+      c.appendChild(pick(j.name, (j.salary || "") + " 万/月", {
+        onClick: function () { push("job", { id: j.dept_id, name: j.name, j: j }, j.name); render(); } }));
+    });
+    foot(c, "", [{ text: "返回", onClick: back }]);
+    wrap.appendChild(c);
+  };
+
+  V.job = function (wrap, ctx) {
+    var j = ctx.j || {};
+    var c = card(j.name, j.dept || "");
+    c.appendChild(h("div", "sub", j.note || ""));
+    c.appendChild(h("div", "sub", "招聘由人力部按编制和缺口自己补，不用你发 offer。"));
+    foot(c, "", [{ text: "返回", onClick: back }]);
+    wrap.appendChild(c);
+  };
+
+  V.report = function (wrap) {
+    var c = card("经营报表", "月度");
+    I("group").forEach(function (it) { kv(c, it.name + (it.note ? "（" + it.note + "）" : ""), money(it.price) + (it.unit === "%" ? "%" : "")); });
+    foot(c, "", [{ text: "返回", onClick: back }]);
+    wrap.appendChild(c);
+  };
+
+  V.timeline = function (wrap) {
+    var c = card("动作记录", LOG.length + " 条");
+    if (!LOG.length) c.appendChild(h("div", "sub", "今天还没动过谁。"));
+    LOG.forEach(function (line) { c.appendChild(h("div", "sub", line)); });
+    c.appendChild(pick("清空记录", "回到初始名册", {
+      onClick: async function () {
+        if (!confirm("清空所有离职/入职记录？")) return;
+        done(await act({ action: "reset" })); await reload(); home();
+      } }));
+    foot(c, "", [{ text: "返回", onClick: back }]);
+    wrap.appendChild(c);
+  };
+
+
+  V.policy = function (wrap) {
+    var pol = (DATA && DATA.items && DATA.items.policy) ? DATA.items.policy[0] : null;
+    var cur = pol ? pol.name : "还没定";
+    var c = card("人事政策", cur);
+    c.appendChild(h("div", "sub", "只有两条路，一年定一次：发奖金，还是降本增效。"));
+    c.appendChild(pick("发奖金", "现金 -1200 万", {
+      icon: "赏", onClick: async function () {
+        done(await act({ action: "policy", target: "bonus" })); await reload(); render();
+      } }));
+    c.appendChild(pick("降本增效", "月成本 -460 万", {
+      icon: "省", onClick: async function () {
+        done(await act({ action: "policy", target: "cut" })); await reload(); render();
+      } }));
+    foot(c, "", [{ text: "返回", onClick: back }]);
+    wrap.appendChild(c);
+  };
+
+  function render() {
+    paintHead();
+    var box = el("stage");
+    clear(box);
+    var n = nav[cur];
+    (V[n.s] || V.home)(box, n.c || {});
+  }
+  async function reload() {
+    DATA = await get("data");
+    if (!DATA || !DATA.items) DATA = await get("nexus");
+    var r = await get("company?action=report");
+    REP = (r && (r.report || (r.data && r.data.report))) || null;
+    if (!REP || REP.cash == null || REP.revenue_total == null) {
+      var g = {}, rows = I("group") || [];
+      rows.forEach(function (x) { g[x.name] = x; });
+      function num(name) { var it = g[name]; return it ? Number(it.price || 0) : null; }
+      var staff = g["编制 / 在岗"];
+      var m = staff && /在岗\s*(\d+)\s*人/.exec(staff.note || "");
+      REP = REP || {};
+      if (REP.revenue_total == null) REP.revenue_total = num("月度营收");
+      if (REP.cash == null) REP.cash = num("账面现金");
+      if (REP.net_profit == null) REP.net_profit = num("净利润");
+      if (REP.headcount == null && staff) REP.headcount = Number(staff.price || 0);
+      if (REP.onboard == null && m) REP.onboard = Number(m[1]);
     }
-
-    async function loadData() {
-      data = await get("data");
-      if (!data || !data.items) { data = await get("nexus"); }
-    }
-
-    async function loadHeader() {
-      var d = await get("status");
-      if (!d) { el("ver").textContent = "读取失败"; return; }
-      el("ver").textContent = "v" + (d.version || "");
-      var c = d.city || {};
-      cityName = c.city || "";
-      el("city").textContent = cityName || "未知";
-      el("tier").textContent = (c.level || "") + (c.factor ? " ×" + c.factor : "");
-      if (data) el("clock").textContent = data.built_at ? ("盘面 " + data.built_at) : "";
-    }
-
-
-    async function boot() {
-      await loadData();
-      await loadHeader();
-      render();
-    }
-
-    var card = el("marketCard");
-    if (card) {
-      var lastTap = 0;
-      card.addEventListener("dblclick", cycle);
-      card.addEventListener("touchend", function () {
-        var now = Date.now();
-        if (now - lastTap < 320) { cycle(); lastTap = 0; } else { lastTap = now; }
-      });
-    }
-    wait(boot);
-  })();
-  </script>
+    var t = await get("company?action=timeline");
+    LOG = (t && (t.log || (t.data && t.data.log))) || [];
+  }
+  function clock() {
+    var t = el("clock"); if (!t) return;
+    var d = new Date();
+    t.textContent = ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+  }
+  clock(); setInterval(clock, 20000);
+  async function boot() { await reload(); render(); }
+  wait(boot);
+})();
+</script>
 </body>
 </html>
