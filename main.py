@@ -543,6 +543,32 @@ class AmoMarketPlugin(Star):
                     "strategies": quant.STRATEGIES, "path": quant.PATH,
                     "risk": quant.RISK_LINES}
 
+        if action in ("customer", "add_customer"):
+            if cl is None: return {"ok": False, "msg": "状态层没加载上"}
+            return cl.add_customer(data_dir, target, note or "政企")
+        if action in ("contract", "sign_contract"):
+            if cl is None: return {"ok": False, "msg": "状态层没加载上"}
+            return cl.create_contract(data_dir, target, note or "项目合同",
+                                     float(getattr(self, "_office_amount", 0) or 0),
+                                     float(getattr(self, "_office_margin", 0.35) or 0.35))
+        if action == "invoice":
+            if cl is None: return {"ok": False, "msg": "状态层没加载上"}
+            return cl.invoice(data_dir, target, float(getattr(self, "_office_amount", 0) or 0))
+        if action in ("receive", "payment"):
+            if cl is None: return {"ok": False, "msg": "状态层没加载上"}
+            return cl.receive(data_dir, target, float(getattr(self, "_office_amount", 0) or 0))
+        if action in ("project", "start_project"):
+            if cl is None: return {"ok": False, "msg": "状态层没加载上"}
+            return cl.project(data_dir, target, note or "方案部",
+                              float(getattr(self, "_office_amount", 0) or 0))
+        if action in ("spend", "expense"):
+            if cl is None: return {"ok": False, "msg": "状态层没加载上"}
+            return cl.spend(data_dir, float(getattr(self, "_office_amount", 0) or 0), note or "经营支出")
+        if action in ("tick", "day_close"):
+            if cl is None: return {"ok": False, "msg": "状态层没加载上"}
+            return {"ok": True, "live": cl.tick(data_dir)}
+        if action in ("live", "operations"):
+            return {"ok": True, "live": cl.snapshot(data_dir) if cl is not None else {}}
         if action == "fire":
             return cl.fire(data_dir, target, note) if cl is not None else {"ok": False, "msg": "状态层没加载上"}
         if action == "hire":
@@ -597,13 +623,18 @@ class AmoMarketPlugin(Star):
             pass
         action = str(params.get("action") or "report").strip().lower()
         try:
-            res = self.office(action, str(params.get("target") or params.get("dept") or params.get("name") or ""),
-                              str(params.get("note") or params.get("post") or ""))
+            try: self._office_amount = float(params.get("amount") or params.get("value") or 0)
+            except Exception: self._office_amount = 0.0
+            try: self._office_margin = float(params.get("margin") or 0.35)
+            except Exception: self._office_margin = 0.35
+            res = self.office(action, str(params.get("target") or params.get("dept") or params.get("name") or params.get("customer") or params.get("contract_id") or ""),
+                              str(params.get("note") or params.get("post") or params.get("title") or params.get("sector") or ""))
         except Exception as exc:
             logger.warning("[amo_market] 经营动作失败: %s" % exc)
             return self._json({"code": 1, "msg": str(exc)})
         if action in ("approve", "reject", "direction", "strategy", "fire_d", "fill_gap", "fill",
-                      "fire", "hire", "reset"):
+                      "fire", "hire", "reset", "customer", "add_customer", "contract", "sign_contract",
+                      "invoice", "receive", "payment", "project", "start_project", "spend", "expense", "tick", "day_close"):
             self._nexus = {}
             self._nexus_day = ""
         # 动作回包：前端拿 data 就行
