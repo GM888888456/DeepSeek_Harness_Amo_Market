@@ -327,24 +327,28 @@ def loan_received(data_dir: str, loan_id: str, amount: float, months: int = 12,
             "operating_cash": state["operating_cash"]}
 
 
-def loan_repaid(data_dir: str, loan_id: str, amount: float) -> Dict[str, Any]:
+def loan_repaid(data_dir: str, loan_id: str, amount: float, principal_paid: float = None,
+                interest_paid: float = 0.0) -> Dict[str, Any]:
     """融资还款：银行先成功扣回后，由 Terminal 回写公司负债与现金。"""
     state = _ensure_ops(load(data_dir))
     amount = round(float(amount or 0), 2)
     for row in state["financing"]:
         if str(row.get("loan_id")) != str(loan_id):
             continue
-        paid = min(amount, float(row.get("outstanding") or 0))
-        row["outstanding"] = round(float(row.get("outstanding") or 0) - paid, 2)
+        paid = min(amount, float(row.get("outstanding") or 0) + max(0.0, float(interest_paid or 0)))
+        principal = min(float(row.get("outstanding") or 0), paid if principal_paid is None else max(0.0, float(principal_paid)))
+        interest = max(0.0, paid - principal)
+        row["outstanding"] = round(float(row.get("outstanding") or 0) - principal, 2)
         if row["outstanding"] <= 0.01:
             row["outstanding"] = 0.0
             row["status"] = "closed"
-        state["debt"] = round(max(0.0, float(state.get("debt") or 0) - paid), 2)
+        state["debt"] = round(max(0.0, float(state.get("debt") or 0) - principal), 2)
         state["operating_cash"] = round(float(state.get("operating_cash") or 0) - paid, 2)
-        _log(state, "偿还银行贷款 %s，%.2f 万；剩余负债 %.2f 万" % (loan_id, paid, state["debt"]))
+        _log(state, "偿还银行贷款 %s，%.2f 万（本金 %.2f，利息 %.2f）；剩余负债 %.2f 万" %
+             (loan_id, paid, principal, interest, state["debt"]))
         save(data_dir, state)
-        return {"ok": True, "paid": paid, "debt": state["debt"],
-                "operating_cash": state["operating_cash"], "financing": dict(row)}
+        return {"ok": True, "paid": paid, "principal_paid": principal, "interest_paid": interest,
+                "debt": state["debt"], "operating_cash": state["operating_cash"], "financing": dict(row)}
     return {"ok": False, "reason": "公司没有这笔融资"}
 
 def add_customer(data_dir: str, name: str, sector: str = "政企",
