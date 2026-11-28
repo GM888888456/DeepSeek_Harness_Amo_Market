@@ -564,6 +564,9 @@ class AmoMarketPlugin(Star):
         if action in ("spend", "expense"):
             if cl is None: return {"ok": False, "msg": "状态层没加载上"}
             return cl.spend(data_dir, float(getattr(self, "_office_amount", 0) or 0), note or "经营支出")
+        if action in ("payroll", "salary"):
+            if cl is None: return {"ok": False, "msg": "状态层没加载上"}
+            return cl.payroll(data_dir, note or "")
         if action in ("tick", "day_close"):
             if cl is None: return {"ok": False, "msg": "状态层没加载上"}
             return {"ok": True, "live": cl.tick(data_dir)}
@@ -636,7 +639,7 @@ class AmoMarketPlugin(Star):
             return self._json({"code": 1, "msg": str(exc)})
         if action in ("approve", "reject", "direction", "strategy", "fire_d", "fill_gap", "fill",
                       "fire", "hire", "reset", "customer", "add_customer", "contract", "sign_contract",
-                      "invoice", "receive", "payment", "project", "start_project", "spend", "expense", "tick", "day_close"):
+                      "invoice", "receive", "payment", "project", "start_project", "spend", "expense", "payroll", "salary", "tick", "day_close"):
             self._nexus = {}
             self._nexus_day = ""
         # 动作回包：前端拿 data 就行
