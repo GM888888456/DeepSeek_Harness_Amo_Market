@@ -434,8 +434,7 @@ def spend(data_dir: str, amount: float, reason: str = "经营支出") -> Dict[st
     amount = round(float(amount or 0), 2)
     if amount <= 0: return {"ok": False, "reason": "支出必须大于 0"}
     state["operating_cash"] = round(float(state.get("operating_cash") or 0) - amount, 2)
-    state["payable"] = round(float(state.get("payable") or 0) + amount, 2)
-    _log(state, "经营支出 %.2f 万：%s" % (amount, reason))
+    _log(state, "经营支出 %.2f 万（已支付）：%s" % (amount, reason))
     save(data_dir, state)
     return {"ok": True, "amount": amount, "operating_cash": state["operating_cash"]}
 
@@ -449,7 +448,6 @@ def payroll(data_dir: str, month: str = "") -> Dict[str, Any]:
     amount = round(sum(float(str(x.get("salary") or 0).replace("万", "")) for x in people), 2)
     # company.py 的薪资口径为“万元/月”；经营现金同口径。
     state["operating_cash"] = round(float(state.get("operating_cash") or 0) - amount, 2)
-    state["payable"] = round(float(state.get("payable") or 0) + amount, 2)
     state["payroll_period"] = period
     state["payroll_amount"] = amount
     _log(state, "月度发薪 %.2f 万，员工 %d 人" % (amount, len(people)))
