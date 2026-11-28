@@ -297,6 +297,9 @@ def _ensure_ops(state):
     state.setdefault("financing", [])
     state.setdefault("debt", 0.0)
     state.setdefault("equity", 0.0)
+    state.setdefault("pledged_receivables", [])
+    state.setdefault("receivable_financing", [])
+    state.setdefault("pledged_amount", 0.0)
     return state
 
 def _op_id(prefix):
@@ -350,6 +353,96 @@ def loan_repaid(data_dir: str, loan_id: str, amount: float, principal_paid: floa
         return {"ok": True, "paid": paid, "principal_paid": principal, "interest_paid": interest,
                 "debt": state["debt"], "operating_cash": state["operating_cash"], "financing": dict(row)}
     return {"ok": False, "reason": "公司没有这笔融资"}
+
+def pledge_receivable(data_dir: str, loan_id: str, contract_id: str,
+                      amount: float, invoice_id: str = "") -> Dict[str, Any]:
+    """锁定未回款应收作为贷款质押；不改变 receivable 资产余额。"""
+    state = _ensure_ops(load(data_dir))
+    amount = round(float(amount or 0), 2)
+    loan_id, contract_id, invoice_id = str(loan_id or "").strip(), str(contract_id or "").strip(), str(invoice_id or "").strip()
+    if not loan_id or not contract_id or amount <= 0:
+        return {"ok": False, "reason": "缺少 loan_id、contract_id 或有效质押金额"}
+    contract = next((x for x in state["contracts"] if str(x.get("id")) == contract_id), None)
+    if not contract:
+        return {"ok": False, "reason": "没有这份合同"}
+    remaining = max(0.0, float(contract.get("amount") or 0) - float(contract.get("received") or 0))
+    already = sum(float(x.get("pledged_amount") or 0) - float(x.get("released_amount") or 0)
+                  for x in state["pledged_receivables"]
+                  if str(x.get("contract_id")) == contract_id and x.get("status") == "active")
+    available = max(0.0, remaining - already)
+    amount = round(min(amount, available), 2)
+    if amount <= 0:
+        return {"ok": False, "reason": "这份应收没有可质押余额"}
+    if any(str(x.get("loan_id")) == loan_id and x.get("status") == "active" for x in state["pledged_receivables"]):
+        return {"ok": False, "reason": "这笔贷款已经存在应收质押"}
+    row = {"id": _op_id("PLEDGE"), "loan_id": loan_id, "contract_id": contract_id,
+           "invoice_id": invoice_id, "customer": contract.get("customer", ""),
+           "pledged_amount": amount, "released_amount": 0.0, "status": "active", "created_at": _now()}
+    state["pledged_receivables"].append(row)
+    state["pledged_amount"] = round(float(state.get("pledged_amount") or 0) + amount, 2)
+    state["receivable_financing"].append({"loan_id": loan_id, "contract_id": contract_id,
+                                          "amount": amount, "status": "active", "at": _now()})
+    _log(state, "应收质押 %s／%s，%.2f 万；未回款应收仍为资产" % (loan_id, contract_id, amount))
+    save(data_dir, state)
+    return {"ok": True, "pledge": dict(row), "available_after": round(available - amount, 2),
+            "receivable": round(float(state["receivable"]), 2)}
+
+def release_receivable(data_dir: str, loan_id: str, amount: float = 0.0,
+                       reason: str = "release") -> Dict[str, Any]:
+    """释放贷款对应的应收质押权利；不改变 receivable。"""
+    state = _ensure_ops(load(data_dir))
+    loan_id = str(loan_id or "").strip()
+    remaining = max(0.0, float(amount or 0))
+    released = 0.0
+    for row in state["pledged_receivables"]:
+        if str(row.get("loan_id")) != loan_id or row.get("status") != "active":
+            continue
+        locked = max(0.0, float(row.get("pledged_amount") or 0) - float(row.get("released_amount") or 0))
+        take = locked if remaining <= 0 else min(locked, remaining)
+        if take <= 0:
+            continue
+        row["released_amount"] = round(float(row.get("released_amount") or 0) + take, 2)
+        released += take
+        remaining = max(0.0, remaining - take)
+        if row["released_amount"] >= float(row.get("pledged_amount") or 0) - 0.01:
+            row["released_amount"] = float(row.get("pledged_amount") or 0)
+            row["status"] = "released"
+    if released:
+        state["pledged_amount"] = round(max(0.0, float(state.get("pledged_amount") or 0) - released), 2)
+        for item in state["receivable_financing"]:
+            if str(item.get("loan_id")) == loan_id and item.get("status") == "active":
+                item["amount"] = round(max(0.0, float(item.get("amount") or 0) - released), 2)
+                if item["amount"] <= 0.01:
+                    item["amount"], item["status"] = 0.0, "released"
+        _log(state, "释放应收质押 %s，%.2f 万（%s）" % (loan_id, released, reason))
+        save(data_dir, state)
+    return {"ok": True, "released": round(released, 2), "pledged_amount": round(float(state.get("pledged_amount") or 0), 2)}
+
+def _release_pledge_for_collection(state: Dict[str, Any], contract_id: str, amount: float) -> float:
+    left, released = max(0.0, float(amount or 0)), 0.0
+    for row in state["pledged_receivables"]:
+        if left <= 0:
+            break
+        if str(row.get("contract_id")) != str(contract_id) or row.get("status") != "active":
+            continue
+        locked = max(0.0, float(row.get("pledged_amount") or 0) - float(row.get("released_amount") or 0))
+        take = min(locked, left)
+        if take <= 0:
+            continue
+        row["released_amount"] = round(float(row.get("released_amount") or 0) + take, 2)
+        released += take
+        left -= take
+        if row["released_amount"] >= float(row.get("pledged_amount") or 0) - 0.01:
+            row["released_amount"] = float(row.get("pledged_amount") or 0)
+            row["status"] = "released"
+    if released:
+        state["pledged_amount"] = round(max(0.0, float(state.get("pledged_amount") or 0) - released), 2)
+        for item in state["receivable_financing"]:
+            if str(item.get("contract_id")) == str(contract_id) and item.get("status") == "active":
+                item["amount"] = round(max(0.0, float(item.get("amount") or 0) - released), 2)
+                if item["amount"] <= 0.01:
+                    item["amount"], item["status"] = 0.0, "released"
+    return released
 
 def add_customer(data_dir: str, name: str, sector: str = "政企",
                 credit: float = 0.0) -> Dict[str, Any]:
@@ -410,11 +503,12 @@ def receive(data_dir: str, contract_id: str, amount: float) -> Dict[str, Any]:
             contract["received"] = round(float(contract.get("received") or 0) + got, 2)
             state["receivable"] = max(0.0, round(float(state.get("receivable") or 0) - got, 2))
             state["operating_cash"] = round(float(state.get("operating_cash") or 0) + got, 2)
+            released = _release_pledge_for_collection(state, contract_id, got)
             if contract["received"] >= contract["amount"] - 0.01: contract["status"] = "paid"
-            _log(state, "客户回款 %s %.2f 万" % (contract["customer"], got))
+            _log(state, "客户回款 %s %.2f 万%s" % (contract["customer"], got, ("；释放质押 %.2f 万" % released) if released else ""))
             save(data_dir, state)
             return {"ok": True, "contract": dict(contract), "received": got,
-                    "operating_cash": state["operating_cash"]}
+                    "released_pledge": round(released, 2), "operating_cash": state["operating_cash"]}
     return {"ok": False, "reason": "没有这份合同"}
 
 def project(data_dir: str, name: str, department: str = "方案部",
@@ -476,6 +570,10 @@ def snapshot(data_dir: str) -> Dict[str, Any]:
     running = [x for x in state["projects"] if x.get("status") == "running"]
     return {
         "customers": len(state["customers"]), "contracts": len(state["contracts"]),
+        "pledged_receivables": list(state.get("pledged_receivables") or [])[-20:],
+        "pledged_amount": round(float(state.get("pledged_amount") or 0), 2),
+        "receivable_available_for_finance": round(max(0.0, float(state.get("receivable") or 0) - float(state.get("pledged_amount") or 0)), 2),
+        "receivable_financing": list(state.get("receivable_financing") or [])[-20:],
         "payroll_period": str(state.get("payroll_period") or ""), "payroll_amount": round(float(state.get("payroll_amount") or 0), 2),
         "active_contracts": len(active), "receivable": round(float(state["receivable"] or 0), 2),
         "operating_cash": round(float(state["operating_cash"] or 0), 2),
