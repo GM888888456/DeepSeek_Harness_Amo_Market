@@ -130,7 +130,9 @@ def hire(data_dir: str, dept_key: str, post: str = "") -> Dict[str, Any]:
 def adjust_cash(data_dir: str, delta: float, reason: str = "") -> Dict[str, Any]:
     """按动作调现金（批预算、赔偿、首月成本都走这里）。"""
     state = load(data_dir)
-    state["cash_delta"] = round(float(state.get("cash_delta") or 0) + float(delta or 0), 2)
+    delta = float(delta or 0)
+    state["cash_delta"] = round(float(state.get("cash_delta") or 0) + delta, 2)
+    state["operating_cash"] = round(float(state.get("operating_cash") or 0) + delta, 2)
     if reason:
         _log(state, reason)
     save(data_dir, state)
