@@ -276,3 +276,139 @@ def report(data_dir: str) -> Dict[str, Any]:
 
 def timeline(data_dir: str) -> List[str]:
     return list(reversed(load(data_dir).get("log") or []))
+
+
+# ---------------------------------------------------------------------------
+# 真正经营层：客户 / 合同 / 发票 / 回款 / 供应商 / 项目 / 日结
+# ---------------------------------------------------------------------------
+
+def _ensure_ops(state):
+    state.setdefault("customers", [])
+    state.setdefault("contracts", [])
+    state.setdefault("invoices", [])
+    state.setdefault("projects", [])
+    state.setdefault("suppliers", [])
+    state.setdefault("operating_cash", 0.0)
+    state.setdefault("receivable", 0.0)
+    state.setdefault("payable", 0.0)
+    state.setdefault("kpi", {})
+    return state
+
+def _op_id(prefix):
+    return "%s-%d" % (prefix, int(time.time() * 1000))
+
+def add_customer(data_dir: str, name: str, sector: str = "政企",
+                credit: float = 0.0) -> Dict[str, Any]:
+    state = _ensure_ops(load(data_dir))
+    name = str(name or "").strip()
+    if not name:
+        return {"ok": False, "reason": "客户名称不能为空"}
+    if any(str(x.get("name")) == name for x in state["customers"]):
+        return {"ok": False, "reason": "客户已经存在"}
+    row = {"id": _op_id("CUS"), "name": name, "sector": sector or "政企",
+           "credit": round(float(credit or 0), 2), "status": "active", "created_at": _now()}
+    state["customers"].append(row)
+    _log(state, "新增客户 %s（%s）" % (name, row["sector"]))
+    save(data_dir, state)
+    return {"ok": True, "customer": row}
+
+def create_contract(data_dir: str, customer: str, title: str, amount: float,
+                    gross_margin: float = 0.35, cycle_days: int = 90) -> Dict[str, Any]:
+    state = _ensure_ops(load(data_dir))
+    amount = round(float(amount or 0), 2)
+    if amount <= 0: return {"ok": False, "reason": "合同金额必须大于 0"}
+    customer = str(customer or "").strip() or "未命名客户"
+    row = {"id": _op_id("CTR"), "customer": customer, "title": str(title or "项目合同"),
+           "amount": amount, "gross_margin": max(0.0, min(0.95, float(gross_margin or 0.35))),
+           "cost_estimate": round(amount * (1 - max(0.0, min(0.95, float(gross_margin or 0.35)))), 2),
+           "received": 0.0, "status": "signed", "signed_at": _now(),
+           "due_at": time.strftime("%Y-%m-%d", time.localtime(time.time() + max(1, int(cycle_days or 90))*86400))}
+    state["contracts"].append(row)
+    state["receivable"] = round(float(state.get("receivable") or 0) + amount, 2)
+    state["operating_cash"] = round(float(state.get("operating_cash") or 0) - row["cost_estimate"] * 0.10, 2)
+    _log(state, "签约 %s／%s，合同 %.2f 万" % (customer, row["title"], amount))
+    save(data_dir, state)
+    return {"ok": True, "contract": row, "operating_cash": state["operating_cash"]}
+
+def invoice(data_dir: str, contract_id: str, amount: float = 0.0) -> Dict[str, Any]:
+    state = _ensure_ops(load(data_dir))
+    for contract in state["contracts"]:
+        if contract.get("id") == contract_id:
+            remaining = max(0.0, float(contract["amount"]) - float(contract.get("received") or 0))
+            amount = round(min(remaining, float(amount or remaining)), 2)
+            if amount <= 0: return {"ok": False, "reason": "没有可开票金额"}
+            row = {"id": _op_id("INV"), "contract": contract_id, "customer": contract["customer"],
+                   "amount": amount, "status": "issued", "issued_at": _now()}
+            state["invoices"].append(row)
+            _log(state, "开票 %s，金额 %.2f 万" % (contract["customer"], amount))
+            save(data_dir, state)
+            return {"ok": True, "invoice": row}
+    return {"ok": False, "reason": "没有这份合同"}
+
+def receive(data_dir: str, contract_id: str, amount: float) -> Dict[str, Any]:
+    state = _ensure_ops(load(data_dir))
+    amount = round(float(amount or 0), 2)
+    if amount <= 0: return {"ok": False, "reason": "回款必须大于 0"}
+    for contract in state["contracts"]:
+        if contract.get("id") == contract_id:
+            remaining = max(0.0, float(contract["amount"]) - float(contract.get("received") or 0))
+            got = min(amount, remaining)
+            contract["received"] = round(float(contract.get("received") or 0) + got, 2)
+            state["receivable"] = max(0.0, round(float(state.get("receivable") or 0) - got, 2))
+            state["operating_cash"] = round(float(state.get("operating_cash") or 0) + got, 2)
+            if contract["received"] >= contract["amount"] - 0.01: contract["status"] = "paid"
+            _log(state, "客户回款 %s %.2f 万" % (contract["customer"], got))
+            save(data_dir, state)
+            return {"ok": True, "contract": dict(contract), "received": got,
+                    "operating_cash": state["operating_cash"]}
+    return {"ok": False, "reason": "没有这份合同"}
+
+def project(data_dir: str, name: str, department: str = "方案部",
+            budget: float = 0.0, progress: float = 0.0) -> Dict[str, Any]:
+    state = _ensure_ops(load(data_dir))
+    row = {"id": _op_id("PRJ"), "name": str(name or "未命名项目"),
+           "department": department or "方案部", "budget": round(float(budget or 0), 2),
+           "spent": 0.0, "progress": max(0.0, min(1.0, float(progress or 0))),
+           "status": "running", "created_at": _now()}
+    state["projects"].append(row)
+    _log(state, "启动项目 %s，预算 %.2f 万" % (row["name"], row["budget"]))
+    save(data_dir, state)
+    return {"ok": True, "project": row}
+
+def spend(data_dir: str, amount: float, reason: str = "经营支出") -> Dict[str, Any]:
+    state = _ensure_ops(load(data_dir))
+    amount = round(float(amount or 0), 2)
+    if amount <= 0: return {"ok": False, "reason": "支出必须大于 0"}
+    state["operating_cash"] = round(float(state.get("operating_cash") or 0) - amount, 2)
+    state["payable"] = round(float(state.get("payable") or 0) + amount, 2)
+    _log(state, "经营支出 %.2f 万：%s" % (amount, reason))
+    save(data_dir, state)
+    return {"ok": True, "amount": amount, "operating_cash": state["operating_cash"]}
+
+def tick(data_dir: str) -> Dict[str, Any]:
+    state = _ensure_ops(load(data_dir))
+    today = time.strftime("%Y-%m-%d")
+    last = str(state.get("ops_last_tick") or "")
+    if last == today:
+        return snapshot(data_dir)
+    state["ops_last_tick"] = today
+    for p in state["projects"]:
+        if p.get("status") == "running":
+            p["progress"] = min(1.0, round(float(p.get("progress") or 0) + 0.08, 2))
+            if p["progress"] >= 1.0: p["status"] = "delivered"
+    _log(state, "经营日结：项目推进，回款/应收 %.2f 万" % float(state.get("receivable") or 0))
+    save(data_dir, state)
+    return snapshot(data_dir)
+
+def snapshot(data_dir: str) -> Dict[str, Any]:
+    state = _ensure_ops(load(data_dir))
+    active = [x for x in state["contracts"] if x.get("status") != "paid"]
+    running = [x for x in state["projects"] if x.get("status") == "running"]
+    return {
+        "customers": len(state["customers"]), "contracts": len(state["contracts"]),
+        "active_contracts": len(active), "receivable": round(float(state["receivable"] or 0), 2),
+        "operating_cash": round(float(state["operating_cash"] or 0), 2),
+        "projects_running": len(running), "projects": list(state["projects"][-20:]),
+        "contracts": list(state["contracts"][-20:]), "invoices": list(state["invoices"][-20:]),
+        "customers_live": list(state["customers"][-20:]), "events": list(state.get("log") or [])[-20:],
+    }
