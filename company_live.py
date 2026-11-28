@@ -324,9 +324,9 @@ def create_contract(data_dir: str, customer: str, title: str, amount: float,
            "received": 0.0, "status": "signed", "signed_at": _now(),
            "due_at": time.strftime("%Y-%m-%d", time.localtime(time.time() + max(1, int(cycle_days or 90))*86400))}
     state["contracts"].append(row)
+    # 签约只形成合同与应收，不提前虚构现金流；真实成本在项目/支出发生时落账。
     state["receivable"] = round(float(state.get("receivable") or 0) + amount, 2)
-    state["operating_cash"] = round(float(state.get("operating_cash") or 0) - row["cost_estimate"] * 0.10, 2)
-    _log(state, "签约 %s／%s，合同 %.2f 万" % (customer, row["title"], amount))
+    _log(state, "签约 %s／%s，合同 %.2f 万，应收形成" % (customer, row["title"], amount))
     save(data_dir, state)
     return {"ok": True, "contract": row, "operating_cash": state["operating_cash"]}
 
@@ -385,6 +385,24 @@ def spend(data_dir: str, amount: float, reason: str = "经营支出") -> Dict[st
     save(data_dir, state)
     return {"ok": True, "amount": amount, "operating_cash": state["operating_cash"]}
 
+def payroll(data_dir: str, month: str = "") -> Dict[str, Any]:
+    """月度发薪：按当前有效员工的月薪形成一次真实经营支出。"""
+    state = _ensure_ops(load(data_dir))
+    period = str(month or time.strftime("%Y-%m"))
+    if str(state.get("payroll_period") or "") == period:
+        return {"ok": True, "repeated": True, "period": period, "amount": state.get("payroll_amount", 0)}
+    people = [x for x in state.get("hired", []) if x.get("status", "active") != "left"]
+    amount = round(sum(float(str(x.get("salary") or 0).replace("万", "")) for x in people), 2)
+    # company.py 的薪资口径为“万元/月”；经营现金同口径。
+    state["operating_cash"] = round(float(state.get("operating_cash") or 0) - amount, 2)
+    state["payable"] = round(float(state.get("payable") or 0) + amount, 2)
+    state["payroll_period"] = period
+    state["payroll_amount"] = amount
+    _log(state, "月度发薪 %.2f 万，员工 %d 人" % (amount, len(people)))
+    save(data_dir, state)
+    return {"ok": True, "period": period, "amount": amount, "employees": len(people),
+            "operating_cash": state["operating_cash"]}
+
 def tick(data_dir: str) -> Dict[str, Any]:
     state = _ensure_ops(load(data_dir))
     today = time.strftime("%Y-%m-%d")
@@ -406,6 +424,7 @@ def snapshot(data_dir: str) -> Dict[str, Any]:
     running = [x for x in state["projects"] if x.get("status") == "running"]
     return {
         "customers": len(state["customers"]), "contracts": len(state["contracts"]),
+        "payroll_period": str(state.get("payroll_period") or ""), "payroll_amount": round(float(state.get("payroll_amount") or 0), 2),
         "active_contracts": len(active), "receivable": round(float(state["receivable"] or 0), 2),
         "operating_cash": round(float(state["operating_cash"] or 0), 2),
         "projects_running": len(running), "projects": list(state["projects"][-20:]),
