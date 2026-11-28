@@ -578,7 +578,9 @@ class AmoMarketPlugin(Star):
         if action == "timeline":
             return {"ok": True, "log": cl.timeline(data_dir) if cl is not None else []}
         if action == "report":
-            return {"ok": True, "report": cl.report(data_dir) if cl is not None else {}}
+            return {"ok": True,
+                    "report": cl.report(data_dir) if cl is not None else {},
+                    "live": cl.snapshot(data_dir) if cl is not None and hasattr(cl, "snapshot") else {}}
         return {"ok": False, "msg": "不认识的动作：%s" % action}
 
     def _company_live(self):
